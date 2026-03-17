@@ -190,16 +190,26 @@ else:
         if st.button("⚡ SCAN FOR PATTERNS"):
             if not user_input.strip():
                 st.toast("Input required.", icon="⚠️")
+
+            elif w_count < 100:
+                st.toast("Minimum 100 words required to analyze the text.", icon="⚠️")
+
             elif model and tfidf:
                 with st.spinner("Decoding neural signatures..."):
                     time.sleep(1)
                     vec = tfidf.transform([user_input])
                     prediction = model.predict(vec)[0]
-                    
-                    if prediction.lower() == "human":
-                        st.markdown('<div style="margin-top:20px; padding:30px; border-radius:20px; background: rgba(239, 68, 68, 0.1); border: 1px solid #ef4444; text-align:center;"><h2 style="color:#ef4444; margin:0;">⚠️ AI GENERATED</h2></div>', unsafe_allow_html=True)
+
+                    if prediction == 0:
+                        st.markdown(
+                            '<div style="margin-top:20px; padding:30px; border-radius:20px; background: rgba(16, 185, 129, 0.1); border: 1px solid #10b981; text-align:center;"><h2 style="color:#10b981; margin:0;">✅ HUMAN WRITTEN</h2></div>',
+                            unsafe_allow_html=True
+                        )
                     else:
-                        st.markdown('<div style="margin-top:20px; padding:30px; border-radius:20px; background: rgba(16, 185, 129, 0.1); border: 1px solid #10b981; text-align:center;"><h2 style="color:#10b981; margin:0;">✅ HUMAN AUTHENTICATED</h2></div>', unsafe_allow_html=True)
+                        st.markdown(
+                            '<div style="margin-top:20px; padding:30px; border-radius:20px; background: rgba(239, 68, 68, 0.1); border: 1px solid #ef4444; text-align:center;"><h2 style="color:#ef4444; margin:0;">⚠️ AI GENERATED</h2></div>',
+                            unsafe_allow_html=True
+                        )
 
     with r_col:
         st.markdown("<br><br><br>", unsafe_allow_html=True)
