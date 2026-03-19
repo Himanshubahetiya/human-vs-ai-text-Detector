@@ -2,6 +2,9 @@ import streamlit as st
 import pandas as pd
 import pickle
 import time
+import numpy as np
+from scipy.sparse import hstack
+from sklearn.feature_extraction.text import ENGLISH_STOP_WORDS
 
 # --- PAGE CONFIGURATION ---
 st.set_page_config(
@@ -104,12 +107,36 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# --- STATE MANAGEMENT ---
-if 'current_page' not in st.session_state:
-    st.session_state.current_page = 'home'
+# --- FEATURE EXTRACTION LOGIC ---
+def extract_features(text):
+    words = text.split()
+    word_count = len(words)
+    # Basic counts
+    sentence_count = text.count(".") + text.count("?") + text.count("!")
+    if sentence_count == 0: sentence_count = 1
+    
+    avg_word_len = np.mean([len(w) for w in words]) if words else 0
+    avg_sentence_len = word_count / sentence_count
+    unique_ratio = len(set(words)) / word_count if word_count else 0
+    
+    # Stylometry
+    punctuation_count = sum(text.count(p) for p in ".,!?;:")
+    uppercase_ratio = sum(1 for c in text if c.isupper()) / len(text) if text else 0
+    digit_count = sum(c.isdigit() for c in text)
+    stopword_ratio = sum(1 for w in words if w.lower() in ENGLISH_STOP_WORDS) / word_count if word_count else 0
+    avg_char_sentence = len(text) / sentence_count
+    
+    # Burstiness & Variation
+    sentences = text.split(".")
+    lengths = [len(s.split()) for s in sentences if len(s.strip()) > 0]
+    burstiness = np.std(lengths) if lengths else 0
+    repetition = 1 - (len(set(words)) / word_count) if word_count else 0
 
-def set_page(page):
-    st.session_state.current_page = page
+    return [
+        word_count, sentence_count, avg_word_len, avg_sentence_len,
+        unique_ratio, punctuation_count, uppercase_ratio, digit_count,
+        stopword_ratio, avg_char_sentence, burstiness, repetition
+    ]
 
 # --- ASSET LOADING ---
 @st.cache_resource
@@ -117,10 +144,18 @@ def load_engine():
     try:
         with open("text.pkl", "rb") as f:
             data = pickle.load(f)
-        return data["model"], data["tfidf"]
-    except: return None, None
+        return data["model"], data["tfidf"], data["scaler"]
+    except:
+        return None, None, None
 
-model, tfidf = load_engine()
+model, tfidf, scaler = load_engine()
+
+# --- STATE MANAGEMENT ---
+if 'current_page' not in st.session_state:
+    st.session_state.current_page = 'home'
+
+def set_page(page):
+    st.session_state.current_page = page
 
 # ==========================================
 # HEADER
@@ -128,7 +163,7 @@ model, tfidf = load_engine()
 st.markdown(f"""
     <div class="nav-bar">
         <div style="font-size: 1.4rem; font-weight: 700; color: #fff;">DETECTOR<span style="color:#7000ff;">.AI</span></div>
-        <div style="color: #64748b; font-size: 0.85rem;">Human & AI Text Detection • v2.0</div>
+        <div style="color: #64748b; font-size: 0.85rem;">Neural Forensic Engine • v2.0</div>
     </div>
 """, unsafe_allow_html=True)
 st.write("<br><br><br><br>", unsafe_allow_html=True)
@@ -145,16 +180,16 @@ if st.session_state.current_page == 'home':
             <h1 class="glitch-title">Human and AI<br>Text Detection</h1>
             <p style="color: #94a3b8; font-size: 1.2rem; max-width: 650px; margin: 15px auto;">
                 Advanced neural forensic analysis to distinguish between 
-                synthetic and organic manuscripts.
+                synthetic and organic manuscripts using SVM & Stylometry.
             </p>
         </div>
     """, unsafe_allow_html=True)
 
     col_a, col_b = st.columns(2)
     with col_a:
-        st.markdown('<div class="glass-card"><h3 style="color:#00f2ff; margin-top:0;">Identify AI</h3><p style="color:#94a3b8; font-size:0.9rem;">Scan for algorithmic patterns and robotic consistency.</p></div>', unsafe_allow_html=True)
+        st.markdown('<div class="glass-card"><h3 style="color:#00f2ff; margin-top:0;">Identify AI</h3><p style="color:#94a3b8; font-size:0.9rem;">Scan for algorithmic patterns, low burstiness, and robotic consistency.</p></div>', unsafe_allow_html=True)
     with col_b:
-        st.markdown('<div class="glass-card"><h3 style="color:#7000ff; margin-top:0;">Verify Human</h3><p style="color:#94a3b8; font-size:0.9rem;">Confirm creative variance and natural linguistic flow.</p></div>', unsafe_allow_html=True)
+        st.markdown('<div class="glass-card"><h3 style="color:#7000ff; margin-top:0;">Verify Human</h3><p style="color:#94a3b8; font-size:0.9rem;">Confirm creative variance, linguistic complexity, and natural flow.</p></div>', unsafe_allow_html=True)
 
 # ==========================================
 # PAGE: APP (ANALYSIS CONSOLE)
@@ -172,8 +207,8 @@ else:
         
         user_input = st.text_area(
             "input", 
-            placeholder="Paste text here...", 
-            height=380, 
+            placeholder="Paste text here (minimum 50 words recommended)...", 
+            height=350, 
             label_visibility="collapsed"
         )
         
@@ -190,26 +225,32 @@ else:
         if st.button("⚡ SCAN FOR PATTERNS"):
             if not user_input.strip():
                 st.toast("Input required.", icon="⚠️")
-
-            elif w_count < 100:
-                st.toast("Minimum 100 words required to analyze the text.", icon="⚠️")
-
-            elif model and tfidf:
+            elif model and tfidf and scaler:
                 with st.spinner("Decoding neural signatures..."):
-                    time.sleep(1)
-                    vec = tfidf.transform([user_input])
-                    prediction = model.predict(vec)[0]
+                    time.sleep(1.2)
+
+                    # Processing
+                    text_vector = tfidf.transform([user_input])
+                    features = extract_features(user_input)
+                    style_feature = scaler.transform([features])
+                    
+                    # Merge and Predict
+                    final_vector = hstack([text_vector, style_feature])
+                    prediction = model.predict(final_vector)[0]
+                    confidence_score = model.decision_function(final_vector)[0]
 
                     if prediction == 0:
                         st.markdown(
-                            '<div style="margin-top:20px; padding:30px; border-radius:20px; background: rgba(16, 185, 129, 0.1); border: 1px solid #10b981; text-align:center;"><h2 style="color:#10b981; margin:0;">✅ HUMAN WRITTEN</h2></div>',
+                            f'<div style="margin-top:20px; padding:30px; border-radius:20px; background: rgba(16, 185, 129, 0.1); border: 1px solid #10b981; text-align:center;"><h2 style="color:#10b981; margin:0;">✅ HUMAN WRITTEN</h2><p style="color:#f8fafc; opacity:0.8; margin-top:10px;"></p></div>',
                             unsafe_allow_html=True
                         )
                     else:
                         st.markdown(
-                            '<div style="margin-top:20px; padding:30px; border-radius:20px; background: rgba(239, 68, 68, 0.1); border: 1px solid #ef4444; text-align:center;"><h2 style="color:#ef4444; margin:0;">⚠️ AI GENERATED</h2></div>',
+                            f'<div style="margin-top:20px; padding:30px; border-radius:20px; background: rgba(239, 68, 68, 0.1); border: 1px solid #ef4444; text-align:center;"><h2 style="color:#ef4444; margin:0;">⚠️ AI GENERATED</h2><p style="color:#f8fafc; opacity:0.8; margin-top:10px;"></p></div>',
                             unsafe_allow_html=True
                         )
+            else:
+                st.error("Engine files (text.pkl) missing or corrupted.")
 
     with r_col:
         st.markdown("<br><br><br>", unsafe_allow_html=True)
@@ -218,13 +259,13 @@ else:
                 <h4 style="margin-top:0; color:#fff; border-bottom:1px solid rgba(255,255,255,0.1); padding-bottom:10px;">System Status</h4>
                 <div style="margin-top:15px;">
                     <p style="font-size:0.85rem; color:#94a3b8; margin-bottom:8px;">Scanner: <span style="color:#10b981; float:right;">● Active</span></p>
-                    <p style="font-size:0.85rem; color:#94a3b8; margin-bottom:8px;">Method: <span style="color:#fff; float:right;">Pattern Recognition</span></p>
-                    <p style="font-size:0.85rem; color:#94a3b8;">Engine: <span style="color:#7000ff; float:right;">SVM + TF-IDF</span></p>
+                    <p style="font-size:0.85rem; color:#94a3b8; margin-bottom:8px;">Stylometry: <span style="color:#00f2ff; float:right;">Enabled</span></p>
+                    <p style="font-size:0.85rem; color:#94a3b8;">Engine: <span style="color:#7000ff; float:right;">SVM + TF-IDF + Scaler</span></p>
                 </div>
             </div>
             <div style="margin-top:20px; padding:15px; background:rgba(0,242,255,0.05); border-radius:15px; border: 1px dashed rgba(0,242,255,0.2);">
                 <p style="font-size:0.75rem; color:#00f2ff; margin:0; line-height:1.4;">
-                    <b>TIP:</b> For maximum accuracy, ensure the text is at least 50 words long.
+                    <b>NOTE:</b> This engine analyzes linguistic variance (burstiness) and stopword distribution to detect synthetic patterns.
                 </p>
             </div>
         """, unsafe_allow_html=True)
