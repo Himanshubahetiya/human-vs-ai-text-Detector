@@ -225,6 +225,7 @@ else:
         if st.button("⚡ SCAN FOR PATTERNS"):
             if not user_input.strip():
                 st.toast("Input required.", icon="⚠️")
+
             elif model and tfidf and scaler:
                 with st.spinner("Decoding neural signatures..."):
                     time.sleep(1.2)
@@ -233,27 +234,55 @@ else:
                     text_vector = tfidf.transform([user_input])
                     features = extract_features(user_input)
                     style_feature = scaler.transform([features])
-                    
+
                     # Merge and Predict
                     final_vector = hstack([text_vector, style_feature])
                     prediction = model.predict(final_vector)[0]
+
                     confidence_score = model.decision_function(final_vector)[0]
 
+                    raw_conf = abs(confidence_score)
+
+                    # 🔥 slow scaling (log instead of tanh)
+                    scaled = np.log1p(raw_conf) / 3   # normalize
+
+                    # map to 60–85 range
+                    confidence_percent = 60 + (scaled * 25)
+
+                    confidence_percent = min(confidence_percent, 85)
+                    confidence_percent = round(confidence_percent, 2)
+
+                    # ✅ RESULT UI
                     if prediction == 0:
                         st.markdown(
-                            f'<div style="margin-top:20px; padding:30px; border-radius:20px; background: rgba(16, 185, 129, 0.1); border: 1px solid #10b981; text-align:center;"><h2 style="color:#10b981; margin:0;">✅ HUMAN WRITTEN</h2><p style="color:#f8fafc; opacity:0.8; margin-top:10px;"></p></div>',
+                            f'''
+                            <div style="margin-top:20px; padding:30px; border-radius:20px;
+                            background: rgba(16, 185, 129, 0.1); border: 1px solid #10b981; text-align:center;">
+                                <h2 style="color:#10b981; margin:0;">✅ HUMAN WRITTEN</h2>
+                                <p style="color:#f8fafc; margin-top:10px;">
+                                    Confidence: <b>{confidence_percent}%</b>
+                                </p>
+                            </div>
+                            ''',
                             unsafe_allow_html=True
                         )
+
                     else:
                         st.markdown(
-                            f'<div style="margin-top:20px; padding:30px; border-radius:20px; background: rgba(239, 68, 68, 0.1); border: 1px solid #ef4444; text-align:center;"><h2 style="color:#ef4444; margin:0;">⚠️ AI GENERATED</h2><p style="color:#f8fafc; opacity:0.8; margin-top:10px;"></p></div>',
+                            f'''
+                            <div style="margin-top:20px; padding:30px; border-radius:20px;
+                            background: rgba(239, 68, 68, 0.1); border: 1px solid #ef4444; text-align:center;">
+                                <h2 style="color:#ef4444; margin:0;">⚠️ AI GENERATED</h2>
+                                <p style="color:#f8fafc; margin-top:10px;">
+                                    Confidence: <b>{confidence_percent}%</b>
+                                </p>
+                            </div>
+                            ''',
                             unsafe_allow_html=True
                         )
             else:
                 st.error("Engine files (text.pkl) missing or corrupted.")
 
-    with r_col:
-        st.markdown("<br><br><br>", unsafe_allow_html=True)
         st.markdown(f"""
             <div class="glass-card">
                 <h4 style="margin-top:0; color:#fff; border-bottom:1px solid rgba(255,255,255,0.1); padding-bottom:10px;">System Status</h4>
